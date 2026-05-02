@@ -29,23 +29,20 @@ export const createUser = async (req, res) => {
 
     let { fullname, email, password, mobile } = req.body;
 
-    // ✅ VALIDATION
     if (!fullname || !email || !password || !mobile) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
     email = email.toLowerCase().trim();
 
-    // ✅ CHECK EXISTING USER
     const existingUser = await UserModel.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // ✅ HASH PASSWORD
     const hashedPassword = await bcrypt.hash(password, 10);
+    const otp = generateOTP();
 
-    // ✅ CREATE USER
     const user = await UserModel.create({
       fullname,
       email,
@@ -53,19 +50,18 @@ export const createUser = async (req, res) => {
       mobile,
       role: "user",
       status: "active",
+      otp,
+      otpExpiry: Date.now() + 10 * 60 * 1000,
     });
 
-    // ✅ SEND OTP EMAIL (NON-BLOCKING)
-    const otp = generateOTP();
-
-    sendMail(
+    await sendMail(
       email,
       "OTP Verification",
       `<h2>Your OTP is: ${otp}</h2>`
-    ).catch((err) => console.log("Email error:", err));
+    );
 
     return res.status(201).json({
-      message: "Signup successful",
+      message: "Signup successful, OTP sent",
       user: {
         id: user._id,
         email: user.email,
@@ -74,13 +70,6 @@ export const createUser = async (req, res) => {
 
   } catch (err) {
     console.error("Signup error:", err);
-
-    if (err.code === 11000) {
-      return res.status(400).json({
-        message: "Email already registered",
-      });
-    }
-
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -93,9 +82,7 @@ export const login = async (req, res) => {
     let { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password required",
-      });
+      return res.status(400).json({ message: "Email and password required" });
     }
 
     email = email.toLowerCase().trim();
@@ -106,18 +93,17 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "User not found" });
     }
 
+    // ✅ BLOCK INACTIVE USERS
     if (user.status === "inactive") {
       return res.status(403).json({
-        message: "Account is deactivated",
+        message: "Your account is deactivated by admin",
       });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      return res.status(400).json({
-        message: "Invalid credentials",
-      });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
     const token = createToken(user);
@@ -125,6 +111,7 @@ export const login = async (req, res) => {
     return res.status(200).json({
       message: "Login success",
       token,
+      role: user.role || "user",
       user: {
         id: user._id,
         fullname: user.fullname,
@@ -155,32 +142,31 @@ export const forgotPassword = async (req, res) => {
     const user = await UserModel.findOne({ email });
 
     if (!user) {
-      return res.status(400).json({ message: "User not found" });
+      return res.status(400).json({ message: "User does not exist" });
     }
 
+    // ✅ BLOCK INACTIVE USERS
     if (user.status === "inactive") {
       return res.status(403).json({
-        message: "Account is deactivated",
+        message: "Your account is deactivated by admin",
       });
     }
 
-    // ✅ GENERATE OTP
     const otp = generateOTP();
 
-    // (Optional: store OTP in DB if you want verification step later)
     user.otp = otp;
     user.otpExpiry = Date.now() + 10 * 60 * 1000;
+
     await user.save();
 
-    // ✅ SEND EMAIL (NON-BLOCKING)
-    sendMail(
+    await sendMail(
       email,
       "Password Reset OTP",
       `<h2>Your OTP is: ${otp}</h2>`
-    ).catch((err) => console.log("Email error:", err));
+    );
 
     return res.status(200).json({
-      message: "OTP sent to email",
+      message: "OTP sent to email 📧",
     });
 
   } catch (err) {
@@ -189,18 +175,21 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
-// ====================== GET USERS ======================
+// ====================== GET ALL USERS ======================
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await UserModel.find().select("-password -__v");
+    const users = await UserModel.find()
+      .select("-password -otp -otpExpiry -__v");
+
     return res.status(200).json(users);
-  } catch (err) {
-    console.error(err);
+
+  } catch (error) {
+    console.error("Get users error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
-// ====================== TOGGLE STATUS ======================
+// ====================== TOGGLE USER STATUS ======================
 export const toggleUserStatus = async (req, res) => {
   try {
     const user = await UserModel.findById(req.params.id);
@@ -209,6 +198,7 @@ export const toggleUserStatus = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // ✅ Prevent admin deactivation
     if (user.role === "admin") {
       return res.status(403).json({
         message: "Cannot deactivate admin",
@@ -221,12 +211,12 @@ export const toggleUserStatus = async (req, res) => {
     await user.save();
 
     return res.status(200).json({
-      message: "Status updated",
+      message: "Status updated successfully",
       status: user.status,
     });
 
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error" });
+    console.error("Toggle status error:", err);
+    return res.status(500).json({ message: err.message });
   }
 };
