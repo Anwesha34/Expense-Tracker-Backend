@@ -20,7 +20,10 @@ app.use(cookieParser());
 // ✅ FIXED CORS (IMPORTANT 🔥)
 app.use(
   cors({
-    origin: true, // allow all origins dynamically
+    origin: [
+      "http://localhost:5173",
+      "https://expense-tracker-frontend-dun-mu.vercel.app"
+    ],
     credentials: true,
   })
 );
