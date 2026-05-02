@@ -17,10 +17,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// ✅ CORS (IMPORTANT)
+// ✅ FIXED CORS (IMPORTANT 🔥)
 app.use(
   cors({
-    origin: process.env.DOMAIN || "*",
+    origin: true, // allow all origins dynamically
     credentials: true,
   })
 );
@@ -39,7 +39,7 @@ mongoose
   .then(() => console.log("✅ Database connected"))
   .catch((err) => console.log("❌ DB Error:", err));
 
-// ✅ Server (VERY IMPORTANT FIX)
+// ✅ Server
 const PORT = process.env.PORT || 3030;
 
 app.listen(PORT, () => {
