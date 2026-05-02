@@ -30,6 +30,8 @@ app.use("/api/transaction", TransactionRouter); // ✅ THIS FIXES YOUR ERROR
 mongoose.connect(process.env.DB_URL)
     .then(() => console.log("Database connected !"))
     .catch(() => console.log("Database not connected !"));
-
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 // Server
 app.listen(3030, () => console.log("Server is running on port 3030"));
