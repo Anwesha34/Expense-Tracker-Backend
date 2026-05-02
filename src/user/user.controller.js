@@ -38,7 +38,6 @@ export const createUser = async (req, res) => {
 
     // ✅ CHECK EXISTING USER
     const existingUser = await UserModel.findOne({ email });
-
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
@@ -56,7 +55,7 @@ export const createUser = async (req, res) => {
       status: "active",
     });
 
-    // ✅ SEND EMAIL (NON-BLOCKING)
+    // ✅ SEND OTP EMAIL (NON-BLOCKING)
     const otp = generateOTP();
 
     sendMail(
@@ -65,7 +64,6 @@ export const createUser = async (req, res) => {
       `<h2>Your OTP is: ${otp}</h2>`
     ).catch((err) => console.log("Email error:", err));
 
-    // ✅ RESPONSE
     return res.status(201).json({
       message: "Signup successful",
       user: {
@@ -77,7 +75,6 @@ export const createUser = async (req, res) => {
   } catch (err) {
     console.error("Signup error:", err);
 
-    // ✅ HANDLE DUPLICATE KEY ERROR (IMPORTANT)
     if (err.code === 11000) {
       return res.status(400).json({
         message: "Email already registered",
@@ -138,6 +135,56 @@ export const login = async (req, res) => {
 
   } catch (err) {
     console.error("Login error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ====================== FORGOT PASSWORD ======================
+export const forgotPassword = async (req, res) => {
+  try {
+    console.log("🔥 FORGOT PASSWORD HIT", req.body);
+
+    let { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    email = email.toLowerCase().trim();
+
+    const user = await UserModel.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    if (user.status === "inactive") {
+      return res.status(403).json({
+        message: "Account is deactivated",
+      });
+    }
+
+    // ✅ GENERATE OTP
+    const otp = generateOTP();
+
+    // (Optional: store OTP in DB if you want verification step later)
+    user.otp = otp;
+    user.otpExpiry = Date.now() + 10 * 60 * 1000;
+    await user.save();
+
+    // ✅ SEND EMAIL (NON-BLOCKING)
+    sendMail(
+      email,
+      "Password Reset OTP",
+      `<h2>Your OTP is: ${otp}</h2>`
+    ).catch((err) => console.log("Email error:", err));
+
+    return res.status(200).json({
+      message: "OTP sent to email",
+    });
+
+  } catch (err) {
+    console.error("Forgot password error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
