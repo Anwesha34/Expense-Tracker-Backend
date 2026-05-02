@@ -29,20 +29,24 @@ export const createUser = async (req, res) => {
 
     let { fullname, email, password, mobile } = req.body;
 
+    // ✅ VALIDATION
     if (!fullname || !email || !password || !mobile) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
     email = email.toLowerCase().trim();
 
+    // ✅ CHECK EXISTING USER
     const existingUser = await UserModel.findOne({ email });
+
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
 
+    // ✅ HASH PASSWORD
     const hashedPassword = await bcrypt.hash(password, 10);
-    const otp = generateOTP();
 
+    // ✅ CREATE USER
     const user = await UserModel.create({
       fullname,
       email,
@@ -50,20 +54,20 @@ export const createUser = async (req, res) => {
       mobile,
       role: "user",
       status: "active",
-      otp,
-      otpExpiry: Date.now() + 10 * 60 * 1000,
     });
 
-    // ✅ NON-BLOCKING EMAIL (FIXED)
+    // ✅ SEND EMAIL (NON-BLOCKING)
+    const otp = generateOTP();
+
     sendMail(
       email,
       "OTP Verification",
       `<h2>Your OTP is: ${otp}</h2>`
     ).catch((err) => console.log("Email error:", err));
 
-    // ✅ FAST RESPONSE
+    // ✅ RESPONSE
     return res.status(201).json({
-      message: "Signup successful, OTP sent",
+      message: "Signup successful",
       user: {
         id: user._id,
         email: user.email,
@@ -72,6 +76,14 @@ export const createUser = async (req, res) => {
 
   } catch (err) {
     console.error("Signup error:", err);
+
+    // ✅ HANDLE DUPLICATE KEY ERROR (IMPORTANT)
+    if (err.code === 11000) {
+      return res.status(400).json({
+        message: "Email already registered",
+      });
+    }
+
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -84,7 +96,9 @@ export const login = async (req, res) => {
     let { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
+      return res.status(400).json({
+        message: "Email and password required",
+      });
     }
 
     email = email.toLowerCase().trim();
@@ -97,14 +111,16 @@ export const login = async (req, res) => {
 
     if (user.status === "inactive") {
       return res.status(403).json({
-        message: "Your account is deactivated by admin",
+        message: "Account is deactivated",
       });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return res.status(400).json({
+        message: "Invalid credentials",
+      });
     }
 
     const token = createToken(user);
@@ -112,7 +128,6 @@ export const login = async (req, res) => {
     return res.status(200).json({
       message: "Login success",
       token,
-      role: user.role || "user",
       user: {
         id: user._id,
         fullname: user.fullname,
@@ -127,71 +142,18 @@ export const login = async (req, res) => {
   }
 };
 
-// ====================== FORGOT PASSWORD ======================
-export const forgotPassword = async (req, res) => {
-  try {
-    console.log("🔥 FORGOT PASSWORD HIT", req.body);
-
-    let { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
-
-    email = email.toLowerCase().trim();
-
-    const user = await UserModel.findOne({ email });
-
-    if (!user) {
-      return res.status(400).json({ message: "User does not exist" });
-    }
-
-    if (user.status === "inactive") {
-      return res.status(403).json({
-        message: "Your account is deactivated by admin",
-      });
-    }
-
-    const otp = generateOTP();
-
-    user.otp = otp;
-    user.otpExpiry = Date.now() + 10 * 60 * 1000;
-
-    await user.save();
-
-    // ✅ NON-BLOCKING EMAIL (FIXED)
-    sendMail(
-      email,
-      "Password Reset OTP",
-      `<h2>Your OTP is: ${otp}</h2>`
-    ).catch((err) => console.log("Email error:", err));
-
-    return res.status(200).json({
-      message: "OTP sent to email 📧",
-    });
-
-  } catch (err) {
-    console.error("Forgot password error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-};
-
-// ====================== GET ALL USERS ======================
+// ====================== GET USERS ======================
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await UserModel.find().select(
-      "-password -otp -otpExpiry -__v"
-    );
-
+    const users = await UserModel.find().select("-password -__v");
     return res.status(200).json(users);
-
-  } catch (error) {
-    console.error("Get users error:", error);
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
-// ====================== TOGGLE USER STATUS ======================
+// ====================== TOGGLE STATUS ======================
 export const toggleUserStatus = async (req, res) => {
   try {
     const user = await UserModel.findById(req.params.id);
@@ -212,12 +174,12 @@ export const toggleUserStatus = async (req, res) => {
     await user.save();
 
     return res.status(200).json({
-      message: "Status updated successfully",
+      message: "Status updated",
       status: user.status,
     });
 
   } catch (err) {
-    console.error("Toggle status error:", err);
-    return res.status(500).json({ message: err.message });
+    console.error(err);
+    return res.status(500).json({ message: "Server error" });
   }
 };
